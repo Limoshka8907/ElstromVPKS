@@ -21,5 +21,9 @@ public partial class Test
 
     public virtual ICollection<TestAssignment> TestAssignments { get; set; } = new List<TestAssignment>();
 
+    public virtual ICollection<TestCustomerAssignment> TestCustomerAssignments { get; set; } = new List<TestCustomerAssignment>();
+
+    public virtual ICollection<TestLog> TestLogs { get; set; } = new List<TestLog>();
+
     public virtual ICollection<TestView> TestViews { get; set; } = new List<TestView>();
 }

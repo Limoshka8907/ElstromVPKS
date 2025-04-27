@@ -31,11 +31,15 @@ public partial class ElstromContext : DbContext
 
     public virtual DbSet<TestAssignment> TestAssignments { get; set; }
 
+    public virtual DbSet<TestCustomerAssignment> TestCustomerAssignments { get; set; }
+
+    public virtual DbSet<TestLog> TestLogs { get; set; }
+
     public virtual DbSet<TestView> TestViews { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Data Source=DESKTOP-IM6F3Q9;Initial Catalog=ElstromTest;Integrated Security=True;Connect Timeout=30;Encrypt=False;Trust Server Certificate=True;Application Intent=ReadWrite;Multi Subnet Failover=False");
+        => optionsBuilder.UseSqlServer("Data Source=DESKTOP-IM6F3Q9;Initial Catalog=ElstromTest;Integrated Security=True;Connect Timeout=30;Encrypt=False;TrustServerCertificate=False;ApplicationIntent=ReadWrite;MultiSubnetFailover=False");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -276,6 +280,67 @@ public partial class ElstromContext : DbContext
             entity.HasOne(d => d.Test).WithMany(p => p.TestAssignments)
                 .HasForeignKey(d => d.TestId)
                 .HasConstraintName("test_assignments_test_id_fkey");
+        });
+
+        modelBuilder.Entity<TestCustomerAssignment>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("test_customer_assignments_pkey");
+
+            entity.ToTable("test_customer_assignments");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+            entity.Property(e => e.AssignedAt)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime")
+                .HasColumnName("assigned_at");
+            entity.Property(e => e.AssignedBy).HasColumnName("assigned_by");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
+            entity.Property(e => e.TestId).HasColumnName("test_id");
+
+            entity.HasOne(d => d.AssignedByNavigation).WithMany(p => p.TestCustomerAssignments)
+                .HasForeignKey(d => d.AssignedBy)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("test_customer_assignments_assigned_by_fkey");
+
+            entity.HasOne(d => d.Customer).WithMany(p => p.TestCustomerAssignments)
+                .HasForeignKey(d => d.CustomerId)
+                .HasConstraintName("test_customer_assignments_customer_id_fkey");
+
+            entity.HasOne(d => d.Test).WithMany(p => p.TestCustomerAssignments)
+                .HasForeignKey(d => d.TestId)
+                .HasConstraintName("test_customer_assignments_test_id_fkey");
+        });
+
+        modelBuilder.Entity<TestLog>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("test_logs_pkey");
+
+            entity.ToTable("test_logs");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+            entity.Property(e => e.ActionDescription)
+                .HasMaxLength(255)
+                .HasColumnName("action_description");
+            entity.Property(e => e.ActionTime)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime")
+                .HasColumnName("action_time");
+            entity.Property(e => e.TestId).HasColumnName("test_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.Test).WithMany(p => p.TestLogs)
+                .HasForeignKey(d => d.TestId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_test");
+
+            entity.HasOne(d => d.User).WithMany(p => p.TestLogs)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_user");
         });
 
         modelBuilder.Entity<TestView>(entity =>

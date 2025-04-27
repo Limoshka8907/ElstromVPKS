@@ -1,39 +1,45 @@
+using Microsoft.EntityFrameworkCore;
 using ElstromVPKS.JWT;
 using ElstromVPKS.Models;
 using ElstromVPKS.Controllers;
-using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var services = builder.Services;
 var configuration = builder.Configuration;
 
+// Настройка JwtOptions
 services.Configure<JwtOptions>(configuration.GetSection(nameof(JwtOptions)));
 
+// Настройка аутентификации
 services.AddApiAuthorization(configuration);
 
-services.AddScoped<JwtProvider>();
-
+// Настройка сервисов
 services.AddControllers();
 services.AddEndpointsApiExplorer();
 services.AddSwaggerGen();
 
+// Подключение базы данных
 services.AddDbContext<ElstromContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddCors(options =>
+// Настройка CORS
+services.AddCors(options =>
 {
     options.AddPolicy("CORSPolicy", builder =>
     {
-        builder.WithOrigins("http://localhost:5173") // Разрешаем фронтенд
+        builder.WithOrigins("http://localhost:5173")
                .AllowAnyMethod()
                .AllowAnyHeader()
-               .AllowCredentials(); // Разрешаем куки и авторизацию
+               .AllowCredentials();
     });
 });
 
+// Настройка JwtProvider
+services.AddSingleton<JwtProvider>();
 
 var app = builder.Build();
 
+// Настройка middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -42,12 +48,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("CORSPolicy");
-
 app.UseAuthentication();
-
 app.UseAuthorization();
-
 app.MapControllers();
+
 app.Run();
 
 public partial class Program { }

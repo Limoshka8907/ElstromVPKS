@@ -28,4 +28,8 @@ public partial class Employee
     public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
 
     public virtual ICollection<TestAssignment> TestAssignments { get; set; } = new List<TestAssignment>();
+
+    public virtual ICollection<TestCustomerAssignment> TestCustomerAssignments { get; set; } = new List<TestCustomerAssignment>();
+
+    public virtual ICollection<TestLog> TestLogs { get; set; } = new List<TestLog>();
 }

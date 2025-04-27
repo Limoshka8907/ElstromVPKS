@@ -21,5 +21,7 @@ public partial class Customer
 
     public DateTime? DeletedAt { get; set; }
 
+    public virtual ICollection<TestCustomerAssignment> TestCustomerAssignments { get; set; } = new List<TestCustomerAssignment>();
+
     public virtual ICollection<TestView> TestViews { get; set; } = new List<TestView>();
 }
