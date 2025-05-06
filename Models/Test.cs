@@ -19,6 +19,10 @@ public partial class Test
 
     public string? Parametrs { get; set; }
 
+    public string? Description { get; set; }
+
+    public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
+
     public virtual ICollection<TestAssignment> TestAssignments { get; set; } = new List<TestAssignment>();
 
     public virtual ICollection<TestCustomerAssignment> TestCustomerAssignments { get; set; } = new List<TestCustomerAssignment>();

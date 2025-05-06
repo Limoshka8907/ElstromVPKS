@@ -111,12 +111,12 @@ public partial class ElstromContext : DbContext
 
             entity.HasOne(d => d.DocumentType).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.DocumentTypeId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("documents_document_type_id_fkey");
 
             entity.HasOne(d => d.Owner).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.OwnerId)
-                .HasConstraintName("documents_owner_id_fkey");
+                .HasConstraintName("FK_documents_tests");
         });
 
         modelBuilder.Entity<DocumentAction>(entity =>
@@ -143,6 +143,7 @@ public partial class ElstromContext : DbContext
 
             entity.HasOne(d => d.Document).WithMany(p => p.DocumentActions)
                 .HasForeignKey(d => d.DocumentId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("document_actions_document_id_fkey");
 
             entity.HasOne(d => d.User).WithMany(p => p.DocumentActions)
@@ -240,6 +241,9 @@ public partial class ElstromContext : DbContext
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
+            entity.Property(e => e.Description)
+                .HasColumnType("text")
+                .HasColumnName("description");
             entity.Property(e => e.Parametrs)
                 .HasColumnType("text")
                 .HasColumnName("parametrs");

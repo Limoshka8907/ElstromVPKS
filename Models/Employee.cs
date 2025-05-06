@@ -25,8 +25,6 @@ public partial class Employee
 
     public virtual ICollection<DocumentAction> DocumentActions { get; set; } = new List<DocumentAction>();
 
-    public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
-
     public virtual ICollection<TestAssignment> TestAssignments { get; set; } = new List<TestAssignment>();
 
     public virtual ICollection<TestCustomerAssignment> TestCustomerAssignments { get; set; } = new List<TestCustomerAssignment>();

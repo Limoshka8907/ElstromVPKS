@@ -4,13 +4,19 @@ using ElstromVPKS.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing.Template;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
+using System.Reflection.Metadata;
 using System.Security.Claims;
 using System.Text;
-
+using System.Text.Json;
+using Spire.Doc;
+using System;
+using System.Collections.Generic;
+using System.IO;
 namespace ElstromVPKS.Controllers
 {
     [Route("api/[controller]")]
@@ -22,12 +28,16 @@ namespace ElstromVPKS.Controllers
         private readonly ElstromContext _db;
         private JwtProvider _jwtProvider;
         private readonly UserRequests _userRequests;
+        private readonly string _documentsPath;
+        private readonly string _templatesPath;
 
         public UserController(ElstromContext appDBContext, JwtProvider jwtProvider)
         {
             _db = appDBContext;
             _jwtProvider = jwtProvider;
             _userRequests = new UserRequests(_db);
+            _documentsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Documents");
+            _templatesPath = Path.Combine(Directory.GetCurrentDirectory(), "Templates");
         }
 
         // Получение всех гостей  
@@ -264,43 +274,42 @@ namespace ElstromVPKS.Controllers
             return await _db.Tests.ToListAsync();
         }
 
-        [HttpGet]
-        [Authorize] // Только для аутентифицированных пользователей
-        [Route("/getCustomerTests")]
-        public async Task<ActionResult<IEnumerable<object>>> GetCustomerTests()
-        {
+        //[HttpGet]
+        //[Authorize] // Только для аутентифицированных пользователей
+        //[Route("/getCustomerTests")]
+        //public async Task<ActionResult<IEnumerable<object>>> GetCustomerTests()
+        //{
+        //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        //    if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        //    {
+        //        return Unauthorized("Невалидный пользователь");
+        //    }
 
-            // Извлекаем userId из токена
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized("Невалидный пользователь");
-            }
+        //    //// Проверяем, что пользователь — клиент
+        //    //var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
+        //    //if (!customerExists)
+        //    //{
+        //    //    return Forbid("Пользователь не является клиентом");
+        //    //}
 
-            // Проверяем, что пользователь — клиент
-            var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
-            if (!customerExists)
-            {
-                return Forbid("Пользователь не является клиентом");
-            }
+        //    // Получаем только завершённые тесты, назначенные клиенту
+        //    var tests = await _db.TestCustomerAssignments
+        //        .Where(tca => tca.CustomerId == userId && tca.Test.Status == "Completed")
+        //        .Select(tca => new
+        //        {
+        //            Id = tca.Test.Id,
+        //            TestName = tca.Test.TestName,
+        //            TestType = tca.Test.TestType,
+        //            Status = tca.Test.Status,
+        //            //Description = tca.Test.Description,
+        //            CreatedAt = tca.Test.CreatedAt,
+        //            Parametrs = tca.Test.Parametrs,
+        //            AssignedAt = tca.AssignedAt
+        //        })
+        //        .ToListAsync();
 
-            // Получаем тесты, назначенные клиенту
-            var tests = await _db.TestCustomerAssignments
-                .Where(tca => tca.CustomerId == userId)
-                .Select(tca => new
-                {
-                    Id = tca.Test.Id,
-                    TestName = tca.Test.TestName,
-                    TestType = tca.Test.TestType,
-                    Status = tca.Test.Status,
-                    CreatedAt = tca.Test.CreatedAt,
-                    Parametrs = tca.Test.Parametrs,
-                    AssignedAt = tca.AssignedAt
-                })
-                .ToListAsync();
-
-            return Ok(tests);
-        }
+        //    return Ok(tests);
+        //}
 
         [HttpGet]
         [Route("/getActions")]
@@ -320,7 +329,7 @@ namespace ElstromVPKS.Controllers
 
         // POST: api/Test/addTest
         [HttpPost("/addTest")]
-        [Authorize(Roles = "Глава инженерного отдела,Инженер")]
+        [Authorize(Roles = "Инженер")]
         public async Task<IActionResult> AddTest([FromForm] TestCreateRequest request)
         {
             if (!ModelState.IsValid)
@@ -329,25 +338,31 @@ namespace ElstromVPKS.Controllers
                     .Where(x => x.Value.Errors.Count > 0)
                     .Select(x => new { x.Key, x.Value.Errors })
                     .ToList();
-                return BadRequest(new { message = "Validation failed", errors });
+                Console.WriteLine("Ошибки валидации модели:");
+                foreach (var error in errors)
+                {
+                    Console.WriteLine($"{error.Key}: {string.Join(", ", error.Errors.Select(e => e.ErrorMessage))}");
+                }
+                return BadRequest(new { message = "Ошибка валидации", errors });
             }
 
             var employeeId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
 
             var test = new Test
             {
+                Id = Guid.NewGuid(),
                 TestName = request.TestName,
                 TestType = request.TestType,
-                //Description = request.Description,
+                Description = request.Description,
                 Status = request.Status,
-                Parametrs = request.Parameters ?? "[]", // Пустой JSON, если Parameters отсутствует
-                CreatedAt = DateTime.Now
+                Parametrs = request.Parameters ?? "[]",
+                CreatedAt = DateTime.Now,
+                //CreatedBy = employeeId
             };
 
-            _db.Tests.Add(test);
+            await _db.Tests.AddAsync(test);
             await _db.SaveChangesAsync();
 
-            // Назначение теста клиенту
             if (!string.IsNullOrEmpty(request.CustomerId) && Guid.TryParse(request.CustomerId, out var customerId))
             {
                 var customer = await _db.Customers.FindAsync(customerId);
@@ -363,42 +378,281 @@ namespace ElstromVPKS.Controllers
                     AssignedBy = employeeId,
                     AssignedAt = DateTime.Now
                 };
-                _db.TestCustomerAssignments.Add(assignment);
+                await _db.TestCustomerAssignments.AddAsync(assignment);
             }
 
-            // Обработка файлов
-            if (request.Files != null && request.Files.Any())
+            // Генерация PDF документа
+            if (!string.IsNullOrEmpty(request.TemplateType))
             {
-                var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads");
-                if (!Directory.Exists(uploadsDir))
-                    Directory.CreateDirectory(uploadsDir);
-
-                foreach (var file in request.Files)
+                var templateInfo = GetTemplateInfo(request.TemplateType);
+                if (templateInfo == null)
                 {
-                    if (file.Length > 0)
-                    {
-                        var filePath = Path.Combine(uploadsDir, $"{Guid.NewGuid()}_{file.FileName}");
-                        using (var fileStream = new FileStream(filePath, FileMode.Create))
-                        {
-                            await file.CopyToAsync(fileStream);
-                        }
+                    return BadRequest("Недопустимый тип шаблона");
+                }
 
-                        // Если таблица test_files создана:
-                        // var testFile = new TestFile
-                        // {
-                        //     TestId = test.Id,
-                        //     FilePath = filePath,
-                        //     UploadedAt = DateTime.Now
-                        // };
-                        // _db.TestFiles.Add(testFile);
+                try
+                {
+                    if (string.IsNullOrEmpty(request.Parameters))
+                    {
+                        return BadRequest("Параметры шаблона отсутствуют");
                     }
+
+                    Console.WriteLine($"Полученные параметры: {request.Parameters}");
+                    var jsonOptions = new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true // Игнорировать регистр при десериализации
+                    };
+                    var parameters = JsonSerializer.Deserialize<List<Parameter>>(request.Parameters, jsonOptions);
+                    if (parameters == null || !parameters.Any())
+                    {
+                        return BadRequest("Параметры шаблона пусты или некорректны");
+                    }
+
+                    // Проверка на пустые или null ключи
+                    var invalidParams = parameters
+                        .Select((p, index) => new { Param = p, Index = index })
+                        .Where(p => string.IsNullOrEmpty(p.Param.Key))
+                        .ToList();
+                    if (invalidParams.Any())
+                    {
+                        var invalidIndices = string.Join(", ", invalidParams.Select(p => p.Index));
+                        Console.WriteLine($"Обнаружены параметры с пустыми ключами на позициях: {invalidIndices}");
+                        return BadRequest($"Обнаружены параметры с пустыми ключами на позициях: {invalidIndices}");
+                    }
+
+                    // Проверка на дубликаты ключей
+                    var duplicates = parameters
+                        .GroupBy(p => p.Key)
+                        .Where(g => g.Count() > 1)
+                        .Select(g => g.Key)
+                        .ToList();
+                    if (duplicates.Any())
+                    {
+                        Console.WriteLine($"Дубликаты ключей: {string.Join(", ", duplicates)}");
+                        return BadRequest($"Обнаружены дубликаты ключей в параметрах: {string.Join(", ", duplicates)}");
+                    }
+
+                    // Логирование параметров
+                    Console.WriteLine("Параметры после десериализации:");
+                    foreach (var param in parameters)
+                    {
+                        Console.WriteLine($"Key: '{param.Key}', Value: '{param.Value}'");
+                    }
+
+                    var replacements = parameters.ToDictionary(
+                        p => p.Key,
+                        p => p.Value ?? ""
+                    );
+
+                    var inputFilePath = Path.Combine(_templatesPath, templateInfo.TemplatePath);
+                    var outputDir = Path.Combine(_documentsPath, test.Id.ToString());
+                    var outputFileName = $"document_{test.Id}_{DateTime.Now:yyyyMMddHHmmss}.pdf";
+                    var outputFilePath = Path.Combine(outputDir, outputFileName);
+
+                    if (!Directory.Exists(outputDir))
+                    {
+                        Directory.CreateDirectory(outputDir);
+                    }
+
+                    if (ReplaceTags(inputFilePath, outputFilePath, replacements))
+                    {
+                        var document = new Models.Document
+                        {
+                            Id = Guid.NewGuid(),
+                            DocumentName = outputFileName,
+                            OwnerId = test.Id,
+                            FilePath = $"/Documents/{test.Id}/{outputFileName}",
+                            Status = "Approved",
+                            Version = 1,
+                            CreatedAt = DateTime.Now
+                        };
+                        await _db.Documents.AddAsync(document);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Не удалось сгенерировать документ для теста {test.Id}: шаблон {inputFilePath}");
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"Ошибка десериализации параметров: {ex.Message}. Параметры: {request.Parameters}");
+                    return BadRequest("Ошибка десериализации параметров шаблона");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка при создании документа: {ex.Message}. Параметры: {request.Parameters}");
+                    return StatusCode(500, "Ошибка при создании документа");
                 }
             }
 
             await _db.SaveChangesAsync();
 
-            return Ok(new { message = "Test created successfully", testId = test.Id });
+            return Ok(new { message = "Тест успешно создан", testId = test.Id });
         }
+
+        private static bool ReplaceTags(string inputFilePath, string outputFilePath, Dictionary<string, string> replacements)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(inputFilePath))
+                {
+                    Console.WriteLine("Шаблон не найден: " + inputFilePath);
+                    return false;
+                }
+
+                Spire.Doc.Document document = new Spire.Doc.Document();
+                document.LoadFromFile(inputFilePath);
+
+                foreach (var replacement in replacements)
+                {
+                    document.Replace(replacement.Key, replacement.Value, true, true);
+                }
+
+                document.SaveToFile(outputFilePath, FileFormat.PDF);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Ошибка при генерации документа: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static TemplateInfo GetTemplateInfo(string templateType)
+        {
+            var templates = new Dictionary<string, TemplateInfo>
+            {
+                ["Receipt"] = new TemplateInfo { TemplatePath = "Receipt/Example.docx" },
+                ["Certificate"] = new TemplateInfo { TemplatePath = "Certificate/CertTemplate.docx" }
+            };
+            return templates.ContainsKey(templateType) ? templates[templateType] : null;
+        }
+
+        // Обновлённая модель TestCreateRequest
+        public class TestCreateRequest
+        {
+            [Required(ErrorMessage = "TestName is required")]
+            public string? TestName { get; set; }
+
+            [Required(ErrorMessage = "TestType is required")]
+            public string? TestType { get; set; }
+
+            public string? Description { get; set; } // Необязательное
+
+            [Required(ErrorMessage = "Status is required")]
+            public string? Status { get; set; }
+
+            public string? Parameters { get; set; } // Необязательное, JSON-строка
+
+            public string? CustomerId { get; set; } // Необязательное, строка GUID
+
+            [Required(ErrorMessage = "TemplateType is required")]
+            public string? TemplateType { get; set; } // Добавлено для выбора шаблона
+
+            public IFormFileCollection? Files { get; set; } // Необязательное
+        }
+
+        public class Parameter
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
+        }
+
+        public class TemplateInfo
+        {
+            public string TemplatePath { get; set; }
+        }
+
+
+        [HttpGet("/getCustomerTests")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<object>>> GetCustomerTests()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized("Невалидный пользователь");
+            }
+
+            var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
+            if (!customerExists)
+            {
+                return Forbid("Пользователь не является клиентом");
+            }
+
+            var tests = await _db.TestCustomerAssignments
+                .Where(tca => tca.CustomerId == userId && tca.Test.Status == "Completed")
+                .Select(tca => new
+                {
+                    Id = tca.Test.Id,
+                    TestName = tca.Test.TestName,
+                    TestType = tca.Test.TestType,
+                    Status = tca.Test.Status,
+                    Description = tca.Test.Description,
+                    CreatedAt = tca.Test.CreatedAt,
+                    Parametrs = tca.Test.Parametrs,
+                    AssignedAt = tca.AssignedAt,
+                    Documents = tca.Test.Documents.Select(d => new
+                    {
+                        d.Id,
+                        d.DocumentName,
+                        d.FilePath
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(tests);
+        }
+
+
+
+        [HttpPut]
+        [Authorize(Roles = "Глава инженерного отдела")]
+        [Route("/updateTestStatus/{id}")]
+        public async Task<IActionResult> UpdateTestStatus(Guid id, [FromBody] UpdateTestStatusRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var test = await _db.Tests.FindAsync(id);
+            if (test == null)
+            {
+                return NotFound("Тест не найден");
+            }
+
+            // Проверяем, что новый статус валиден
+            var validStatuses = new[] { "Planned", "In Progress", "Completed", "Cancelled" };
+            if (!validStatuses.Contains(request.Status))
+            {
+                return BadRequest("Недопустимый статус теста");
+            }
+
+            test.Status = request.Status;
+            test.UpdatedAt = DateTime.Now;
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!_db.Tests.Any(t => t.Id == id))
+                {
+                    return NotFound("Тест не найден");
+                }
+                throw;
+            }
+
+            return Ok(new { message = "Статус теста обновлён", testId = test.Id });
+        }
+
+        public class UpdateTestStatusRequest
+        {
+            public string Status { get; set; }
+        }
+
 
         [HttpPost("/addCustomer")]
         public async Task<IActionResult> AddCustomer([FromForm] CustomerCreateRequest request)

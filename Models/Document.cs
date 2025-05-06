@@ -29,5 +29,5 @@ public partial class Document
 
     public virtual ICollection<DocumentVersion> DocumentVersions { get; set; } = new List<DocumentVersion>();
 
-    public virtual Employee Owner { get; set; } = null!;
+    public virtual Test Owner { get; set; } = null!;
 }
