@@ -17,6 +17,9 @@ using Spire.Doc;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using HarfBuzzSharp;
+using BCrypt.Net;
+using System.Text.Json.Serialization;
 namespace ElstromVPKS.Controllers
 {
     [Route("api/[controller]")]
@@ -82,7 +85,7 @@ namespace ElstromVPKS.Controllers
         //}
 
         [HttpGet]
-        [Authorize(Roles = "Глава инженерного отдела")]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела")]
         [Route("/getEmployees")]
         public async Task<ActionResult<IEnumerable<Employee>>> GetEmployees()
         {
@@ -90,7 +93,7 @@ namespace ElstromVPKS.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Глава инженерного отдела,Инженер")]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела,Инженер")]
         [Route("/getCustomers")]
         public async Task<ActionResult<IEnumerable<Customer>>> GetCustomers()
         {
@@ -98,21 +101,153 @@ namespace ElstromVPKS.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Глава инженерного отдела,Инженер")]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела, Инженер")]
         [Route("/addEmployee")]
         public async Task<ActionResult<Employee>> CreateEmployee([FromBody] Employee employee)
         {
             if (!ModelState.IsValid)
             {
+                var errors = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .Select(x => new { x.Key, Errors = x.Value.Errors.Select(e => e.ErrorMessage) })
+                    .ToList();
+                Console.WriteLine("Ошибки валидации модели:");
+                foreach (var error in errors)
+                {
+                    Console.WriteLine($"{error.Key}: {string.Join(", ", error.Errors)}");
+                }
                 return BadRequest(ModelState);
             }
 
-            employee.Id = Guid.NewGuid();
-            employee.CreatedAt = DateTime.Now;
-            _db.Employees.Add(employee);
-            await _db.SaveChangesAsync();
+            try
+            {
+                // Проверка уникальности username
+                if (await _db.Employees.AnyAsync(e => e.Username == employee.Username))
+                {
+                    ModelState.AddModelError("username", "Имя пользователя уже существует.");
+                    return BadRequest(ModelState);
+                }
 
-            return CreatedAtAction(nameof(GetEmployeeById), new { id = employee.Id }, employee);
+                // Генерация GUID и установка текущей даты
+                employee.Id = Guid.NewGuid();
+                employee.CreatedAt = DateTime.UtcNow;
+
+                // Хеширование пароля
+                var salt = BCrypt.Net.BCrypt.GenerateSalt();
+                employee.HashedPassword = BCrypt.Net.BCrypt.HashPassword(employee.HashedPassword, salt);
+                employee.Salt = salt;
+
+
+                _db.Employees.Add(employee);
+                await _db.SaveChangesAsync();
+
+                // Возвращаем объект без чувствительных данных
+                var responseEmployee = new Employee
+                {
+                    Id = employee.Id,
+                    FirstName = employee.FirstName,
+                    LastName = employee.LastName,
+                    Username = employee.Username,
+                    Role = employee.Role,
+                    CreatedAt = employee.CreatedAt,
+                    Salt = employee.Salt
+                };
+
+                return CreatedAtAction(nameof(GetEmployeeById), new { id = employee.Id }, responseEmployee);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Ошибка при создании сотрудника: {ex.Message}");
+            }
+        }
+
+        // ... (другие методы остаются без изменений)
+
+
+        [HttpPost]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела, Инженер")]
+        [Route("/addCustomer")]
+        public async Task<ActionResult<Customer>> CreateCustomer([FromBody] Customer customer)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .Select(x => new { x.Key, Errors = x.Value.Errors.Select(e => e.ErrorMessage) })
+                    .ToList();
+                Console.WriteLine("Ошибки валидации модели:");
+                foreach (var error in errors)
+                {
+                    Console.WriteLine($"{error.Key}: {string.Join(", ", error.Errors)}");
+                }
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                // Проверка уникальности email
+                if (await _db.Customers.AnyAsync(c => c.Email == customer.Email))
+                {
+                    ModelState.AddModelError("email", "Email уже зарегистрирован.");
+                    return BadRequest(ModelState);
+                }
+
+                // Генерация GUID и установка текущей даты
+                customer.Id = Guid.NewGuid();
+                customer.CreatedAt = DateTime.UtcNow;
+
+                // Хеширование пароля
+                var salt = BCrypt.Net.BCrypt.GenerateSalt();
+                customer.HashedPassword = BCrypt.Net.BCrypt.HashPassword(customer.HashedPassword, salt);
+                customer.Salt = salt;
+
+
+                _db.Customers.Add(customer);
+                await _db.SaveChangesAsync();
+
+                // Возвращаем объект без чувствительных данных
+                var responseCustomer = new Customer
+                {
+                    Id = customer.Id,
+                    FirstName = customer.FirstName,
+                    LastName = customer.LastName,
+                    Email = customer.Email,
+                    CreatedAt = customer.CreatedAt,
+                    Salt = customer.Salt
+                };
+
+                return CreatedAtAction(nameof(GetCustomerById), new { id = customer.Id }, responseCustomer);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Ошибка при создании заказчика: {ex.Message}");
+            }
+        }
+
+
+        [HttpGet]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела, Инженер")]
+        [Route("/getCustomerById/{id}")]
+        public async Task<ActionResult<Customer>> GetCustomerById(Guid id)
+        {
+            var customer = await _db.Customers.FindAsync(id);
+
+            if (customer == null)
+            {
+                return NotFound("Заказчик с данным ID не найден");
+            }
+
+            // Возвращаем объект без чувствительных данных
+            var responseCustomer = new Customer
+            {
+                Id = customer.Id,
+                FirstName = customer.FirstName,
+                LastName = customer.LastName,
+                Email = customer.Email,
+                CreatedAt = customer.CreatedAt
+            };
+
+            return responseCustomer;
         }
 
         // Обновление данных гостя  
@@ -266,7 +401,7 @@ namespace ElstromVPKS.Controllers
         }
 
         [HttpGet]
-        [Authorize(Roles = "Глава инженерного отдела,Инженер")]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела,Инженер")]
         [Route("/getTests")]
         public async Task<ActionResult<IEnumerable<Test>>> GetTests()
         {
@@ -568,46 +703,74 @@ namespace ElstromVPKS.Controllers
         [Authorize]
         public async Task<ActionResult<IEnumerable<object>>> GetCustomerTests()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            try
             {
-                return Unauthorized("Невалидный пользователь");
-            }
+                // Получаем authTokenCustomer из куки
+                var token = Request.Cookies["authTokenCustomer"];
+                Console.WriteLine($"authTokenCustomer: {token}");
 
-            var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
-            if (!customerExists)
-            {
-                return Forbid("Пользователь не является клиентом");
-            }
-
-            var tests = await _db.TestCustomerAssignments
-                .Where(tca => tca.CustomerId == userId && tca.Test.Status == "Completed")
-                .Select(tca => new
+                if (string.IsNullOrEmpty(token))
                 {
-                    Id = tca.Test.Id,
-                    TestName = tca.Test.TestName,
-                    TestType = tca.Test.TestType,
-                    Status = tca.Test.Status,
-                    Description = tca.Test.Description,
-                    CreatedAt = tca.Test.CreatedAt,
-                    Parametrs = tca.Test.Parametrs,
-                    AssignedAt = tca.AssignedAt,
-                    Documents = tca.Test.Documents.Select(d => new
-                    {
-                        d.Id,
-                        d.DocumentName,
-                        d.FilePath
-                    }).ToList()
-                })
-                .ToListAsync();
+                    Console.WriteLine("authTokenCustomer cookie is missing");
+                    return Unauthorized("Токен клиента не найден");
+                }
 
-            return Ok(tests);
+                // Валидируем токен и извлекаем claims
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var jwtToken = tokenHandler.ReadJwtToken(token);
+                var userIdClaim = jwtToken.Claims.FirstOrDefault().Value;
+                Console.WriteLine($"UserIdClaim from authTokenCustomer: {userIdClaim}");
+
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    Console.WriteLine("Invalid user: userIdClaim is empty or not a GUID");
+                    return Unauthorized("Невалидный пользователь");
+                }
+
+                // Проверяем, что пользователь — клиент
+                var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
+                if (!customerExists)
+                {
+                    Console.WriteLine($"User with ID {userId} is not a customer");
+                    return StatusCode(403, "Пользователь не является клиентом");
+                }
+
+                // Получаем завершённые тесты клиента
+                var tests = await _db.TestCustomerAssignments
+                    .Where(tca => tca.CustomerId == userId && tca.Test.Status == "Completed")
+                    .Select(tca => new
+                    {
+                        Id = tca.Test.Id,
+                        TestName = tca.Test.TestName,
+                        TestType = tca.Test.TestType,
+                        Status = tca.Test.Status,
+                        Description = tca.Test.Description,
+                        CreatedAt = tca.Test.CreatedAt,
+                        Parametrs = tca.Test.Parametrs,
+                        AssignedAt = tca.AssignedAt,
+                        Documents = tca.Test.Documents.Select(d => new
+                        {
+                            d.Id,
+                            d.DocumentName,
+                            d.FilePath
+                        }).ToList()
+                    })
+                    .ToListAsync();
+
+                Console.WriteLine($"Found tests: {tests.Count}");
+                return Ok(tests);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetCustomerTests: {ex.Message}\nStackTrace: {ex.StackTrace}");
+                return StatusCode(500, "Произошла ошибка при получении тестов клиента");
+            }
         }
 
 
 
         [HttpPut]
-        [Authorize(Roles = "Глава инженерного отдела")]
+        [Authorize(Roles = "Отдел, Глава инженерного отдела")]
         [Route("/updateTestStatus/{id}")]
         public async Task<IActionResult> UpdateTestStatus(Guid id, [FromBody] UpdateTestStatusRequest request)
         {
@@ -654,27 +817,27 @@ namespace ElstromVPKS.Controllers
         }
 
 
-        [HttpPost("/addCustomer")]
-        public async Task<IActionResult> AddCustomer([FromForm] CustomerCreateRequest request)
-        {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+        //[HttpPost("/addCustomer")]
+        //public async Task<IActionResult> AddCustomer([FromForm] CustomerCreateRequest request)
+        //{
+        //    if (!ModelState.IsValid)
+        //        return BadRequest(ModelState);
 
-            var customer = new Customer
-            {
-                FirstName = request.FirstName,
-                LastName = request.LastName,
-                Email = request.Email,
-                HashedPassword = request.Password
-            };
-
-
-            _db.Customers.Add(customer);
-            await _db.SaveChangesAsync();
+        //    var customer = new Customer
+        //    {
+        //        FirstName = request.FirstName,
+        //        LastName = request.LastName,
+        //        Email = request.Email,
+        //        HashedPassword = request.Password
+        //    };
 
 
-            return Ok(new { message = "Test created successfully", customerId = customer.Id });
-        }
+        //    _db.Customers.Add(customer);
+        //    await _db.SaveChangesAsync();
+
+
+        //    return Ok(new { message = "Test created successfully", customerId = customer.Id });
+        //}
         public class CustomerCreateRequest
         {
             public string? FirstName { get; set; }
@@ -685,15 +848,72 @@ namespace ElstromVPKS.Controllers
         }
 
         // Получение деталей теста по его ID
+        //[HttpGet("/getTestById/{id}")]
+        //public async Task<IActionResult> GetTestById(Guid id)
+        //{
+        //    var test = await _db.Tests.FindAsync(id);
+        //    if (test == null)
+        //    {
+        //        return NotFound(new { message = "Тест не найден" });
+        //    }
+        //    return Ok(test);
+        //}
+
+        [HttpGet("/getDocuments")]
+        public IActionResult GetDocument(string filePath)
+        {
+            Console.WriteLine($"GetDocument вызван. Исходный filePath: {filePath}");
+
+            // Декодируем путь
+            var decodedFilePath = Uri.UnescapeDataString(filePath);
+            Console.WriteLine($"Декодированный filePath: {decodedFilePath}");
+
+            // Формируем полный путь, сохраняя структуру папок
+            var filePathResolved = Path.Combine(_documentsPath, decodedFilePath);
+            Console.WriteLine($"Полный путь к файлу: {filePathResolved}");
+
+            if (!System.IO.File.Exists(filePathResolved))
+            {
+                Console.WriteLine($"Файл не найден: {filePathResolved}");
+                return NotFound(new { message = "Документ не найден", path = filePathResolved });
+            }
+
+            var fileStream = new FileStream(filePathResolved, FileMode.Open, FileAccess.Read);
+            return File(fileStream, "application/pdf", Path.GetFileName(filePathResolved));
+        }
+
         [HttpGet("/getTestById/{id}")]
         public async Task<IActionResult> GetTestById(Guid id)
         {
-            var test = await _db.Tests.FindAsync(id);
+            var test = await _db.Tests
+                .Include(t => t.Documents) // Включаем связанные документы
+                .FirstOrDefaultAsync(t => t.Id == id);
+
             if (test == null)
             {
                 return NotFound(new { message = "Тест не найден" });
             }
-            return Ok(test);
+
+            // Формируем DTO для ответа
+            var testDto = new
+            {
+                test.Id,
+                test.TestName,
+                test.TestType,
+                test.Description,
+                test.Status,
+                test.CreatedAt,
+                Documents = test.Documents.Select(d => new
+                {
+                    d.Id,
+                    d.DocumentName,
+                    d.FilePath,
+                    d.Status,
+                    d.CreatedAt
+                }).ToList()
+            };
+
+            return Ok(testDto);
         }
 
 
