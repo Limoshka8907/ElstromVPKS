@@ -43,18 +43,7 @@ namespace ElstromVPKS.Controllers
             _templatesPath = Path.Combine(Directory.GetCurrentDirectory(), "Templates");
         }
 
-        // Получение всех гостей  
-        [HttpGet]
-        [Authorize]
-
-        //[Route("/getEmployees")]
-        //public async Task<ActionResult<IEnumerable<Employee>>> GetEmployees()
-        //{
-        //    return await _db.Employees.ToListAsync();
-        //}
-
-        // Получение гостя по ID  
-        [HttpGet]
+       [HttpGet]
         [Route("/getEmployees/{id}")]
         public async Task<ActionResult<Employee>> GetEmployeeById(int id)
         {
@@ -68,21 +57,6 @@ namespace ElstromVPKS.Controllers
             return Employee;
         }
 
-        //// Добавление нового гостя  
-        //[HttpPost]
-        //[Route("/addEmployee")]
-        //public async Task<ActionResult<Employee>> CreateEmployee([FromBody] Employee Employee)
-        //{
-        //    if (!ModelState.IsValid)
-        //    {
-        //        return BadRequest(ModelState);
-        //    }
-
-        //    _db.Employees.Add(Employee);
-        //    await _db.SaveChangesAsync();
-
-        //    return CreatedAtAction(nameof(GetEmployeeById), new { id = Employee.Id }, Employee);
-        //}
 
         [HttpGet]
         [Authorize(Roles = "Отдел, Глава инженерного отдела")]
@@ -160,8 +134,6 @@ namespace ElstromVPKS.Controllers
                 return StatusCode(500, $"Ошибка при создании сотрудника: {ex.Message}");
             }
         }
-
-        // ... (другие методы остаются без изменений)
 
 
         [HttpPost]
@@ -409,42 +381,6 @@ namespace ElstromVPKS.Controllers
             return await _db.Tests.ToListAsync();
         }
 
-        //[HttpGet]
-        //[Authorize] // Только для аутентифицированных пользователей
-        //[Route("/getCustomerTests")]
-        //public async Task<ActionResult<IEnumerable<object>>> GetCustomerTests()
-        //{
-        //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        //    if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-        //    {
-        //        return Unauthorized("Невалидный пользователь");
-        //    }
-
-        //    //// Проверяем, что пользователь — клиент
-        //    //var customerExists = await _db.Customers.AnyAsync(c => c.Id == userId);
-        //    //if (!customerExists)
-        //    //{
-        //    //    return Forbid("Пользователь не является клиентом");
-        //    //}
-
-        //    // Получаем только завершённые тесты, назначенные клиенту
-        //    var tests = await _db.TestCustomerAssignments
-        //        .Where(tca => tca.CustomerId == userId && tca.Test.Status == "Completed")
-        //        .Select(tca => new
-        //        {
-        //            Id = tca.Test.Id,
-        //            TestName = tca.Test.TestName,
-        //            TestType = tca.Test.TestType,
-        //            Status = tca.Test.Status,
-        //            //Description = tca.Test.Description,
-        //            CreatedAt = tca.Test.CreatedAt,
-        //            Parametrs = tca.Test.Parametrs,
-        //            AssignedAt = tca.AssignedAt
-        //        })
-        //        .ToListAsync();
-
-        //    return Ok(tests);
-        //}
 
         [HttpGet]
         [Route("/getActions")]
@@ -464,7 +400,7 @@ namespace ElstromVPKS.Controllers
 
         // POST: api/Test/addTest
         [HttpPost("/addTest")]
-        [Authorize(Roles = "Инженер")]
+        [Authorize(Roles = "Инженер, Отдел")]
         public async Task<IActionResult> AddTest([FromForm] TestCreateRequest request)
         {
             if (!ModelState.IsValid)
@@ -492,7 +428,6 @@ namespace ElstromVPKS.Controllers
                 Status = request.Status,
                 Parametrs = request.Parameters ?? "[]",
                 CreatedAt = DateTime.Now,
-                //CreatedBy = employeeId
             };
 
             await _db.Tests.AddAsync(test);
@@ -588,7 +523,7 @@ namespace ElstromVPKS.Controllers
                     {
                         Directory.CreateDirectory(outputDir);
                     }
-
+                    Models.Document _document = null;
                     if (ReplaceTags(inputFilePath, outputFilePath, replacements))
                     {
                         var document = new Models.Document
@@ -606,6 +541,46 @@ namespace ElstromVPKS.Controllers
                     else
                     {
                         Console.WriteLine($"Не удалось сгенерировать документ для теста {test.Id}: шаблон {inputFilePath}");
+                    }
+                    try
+                    {
+                        if (_document != null)
+                        {
+                            var documentType = new DocumentType()
+                            {
+                                Id = _document.Id   ,
+                                Name = test.TestType
+                            };
+                        }
+                       
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Возникла ошибка: {ex.Message}");
+                    }
+
+                    try
+                    {
+                        if (_document != null)
+                        {
+                            var documentAction = new DocumentAction
+                            {
+                                Id = Guid.NewGuid(), // Генерируем новый уникальный ID
+                                DocumentId = _document.Id,
+                                UserId = employeeId,
+                                UserType = "Права редактирования",
+                                ActionType = "Добавление",
+                                ActionTime = DateTime.UtcNow;
+                            };
+
+                            // Добавляем запись в базу данных
+                            _db.DocumentActions.Add(documentAction);
+                        }
+
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Возникла ошибка: {ex.Message}");
                     }
                 }
                 catch (JsonException ex)
@@ -858,6 +833,14 @@ namespace ElstromVPKS.Controllers
         //    }
         //    return Ok(test);
         //}
+        [HttpGet]
+        [Authorize(Roles = "Отдел")]
+        [Route("/documents")]
+        public async Task<ActionResult<IEnumerable<ElstromVPKS.Models.Document>>> GetDocs()
+        {
+
+            return await _db.Documents.ToListAsync();
+        }
 
         [HttpGet("/getDocuments")]
         public IActionResult GetDocument(string filePath)
@@ -879,6 +862,7 @@ namespace ElstromVPKS.Controllers
             }
 
             var fileStream = new FileStream(filePathResolved, FileMode.Open, FileAccess.Read);
+
             return File(fileStream, "application/pdf", Path.GetFileName(filePathResolved));
         }
 
